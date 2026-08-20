@@ -19,7 +19,6 @@ BATCH = 8
 LR = 5e-4
 
 class _AMDecoder(nn.Module):
-    """Single-step pointer attention (dot-product)."""
 
     def __init__(self, d_hid: int, n_heads: int):
         super().__init__()
@@ -44,7 +43,6 @@ class _AMDecoder(nn.Module):
 
 
 class _AttentionModel(nn.Module):
-    """Tiny pointer network. We use a fixed graph encoder."""
 
     def __init__(self, n_nodes: int, d_hid: int = D_HID,
                  n_heads: int = N_HEADS, n_layers: int = N_LAYERS):
@@ -94,7 +92,6 @@ class ConstrainedAM:
         self.edge_cost = self.edge_cost.to(self.device)
 
     def _greedy_decode(self) -> Tuple[List[int], float, float]:
-        """Greedy decoding on the *single* instance with a feasibility mask."""
         with torch.no_grad():
             h = self.model.encode(torch.tensor([self.s],
                                                device=self.device))
