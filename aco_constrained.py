@@ -1,23 +1,3 @@
-"""
-Constrained Ant Colony Optimisation baseline for CSPP.
-
-Strategy: Lagrangian-flavored ACO.
-  - Each ant constructs a path greedily using pheromone on the *edge
-    cost* and heuristic information equal to 1 / max(t_ij, eps)
-    (preferring fast edges).
-  - During construction, if the partial-path time exceeds T_max, we
-    abort that ant (no pheromone deposit).  This is the cleanest
-    way to enforce the time constraint inside vanilla ACO without
-    changing the pheromone update rule.
-
-Outputs a dict with the same schema as ``solve_cspp_cplex``:
-    {"path": [...], "cost": float, "time": float, "feasible": bool}
-so it can be dropped straight into ``multi_seed_experiment.py``.
-
-Default hyperparameters are the values quoted in the revised paper:
-alpha=1, beta=2, rho=0.1, n_ants=50, n_iter=100.
-"""
-
 import random
 from typing import Dict, List, Optional
 
@@ -42,7 +22,7 @@ def _select_next(
     pheromone: Dict[tuple, float],
     heuristic: Dict[tuple, float],
 ) -> Optional[int]:
-    """Standard ACO probability sampling over unvisited successors."""
+
     candidates = [v for v in successors if v not in visited]
     if not candidates:
         return None
@@ -69,11 +49,7 @@ def solve(
     n_iter: int = N_ITER,
     seed: Optional[int] = None,
 ) -> Dict:
-    """Solve one CSPP instance by constrained ACO.
 
-    Returns a dict compatible with the CPLEX output schema:
-        {"path": [...], "cost": float, "time": float, "feasible": bool}
-    """
     rng = random.Random(seed)
     G: nx.DiGraph = instance.G
     s, t = instance.origin, instance.destination
