@@ -1,29 +1,3 @@
-"""
-Constrained Attention-Model (AM) baseline for CSPP.
-
-A minimal pointer-network [Vinyals et al. 2015] in the style of
-Kool et al.'s "Attention, Learn to Solve Routing Problems!"
-(2019), trained from scratch on the *same* CSPP instances used by
-E2E-GERL.
-
-What "constrained" means here:
-  - During decoding, every already-ancored or infeasible successor
-    is masked to -inf in the logits so the model cannot select it.
-  - An edge is *infeasible* if its time pushes the cumulative path
-    time above T_max, OR if the node has already been visited, OR
-    if the node is the destination and the remaining budget is
-    negative.
-
-We deliberately do NOT modify the training loss (which is the
-expected path cost) -- the constraint is enforced *at inference*
-through the mask, which is the same policy used by E2E-GERL in
-practice (its feasibility comes from the action masking inside the
-trainer).  This makes the comparison fair: both methods learn to
-solve the unconstrained problem and then have to respect T_max.
-
-Output schema matches ``solve_cspp_cplex``.
-"""
-
 import math
 from typing import Dict, List, Optional, Tuple
 
@@ -43,11 +17,6 @@ N_TRAIN_INSTANCES = 50
 N_EPOCHS = 30
 BATCH = 8
 LR = 5e-4
-
-
-# ---------------------------------------------------------------------------
-# Model
-# ---------------------------------------------------------------------------
 
 class _AMDecoder(nn.Module):
     """Single-step pointer attention (dot-product)."""
@@ -101,11 +70,6 @@ class _AttentionModel(nn.Module):
         Returns logits (B, N)."""
         q = h[torch.arange(h.size(0)), query_idx]   # (B, d)
         return self.dec(q, h, mask)                 # (B, N)
-
-
-# ---------------------------------------------------------------------------
-# Solver
-# ---------------------------------------------------------------------------
 
 class ConstrainedAM:
     """Wrapper that trains (on the supplied instance) and then solves."""
@@ -167,13 +131,7 @@ class ConstrainedAM:
             return path, cum_c, cum_t
 
     def train_self_supervised(self, n_epochs: int = N_EPOCHS):
-        """Train the model with REINFORCE-style self-play on the instance.
-
-        For a single training instance with N=30, we sample 16 random
-        paths per epoch, take the lowest-cost feasible one, and use
-        REINFORCE on the AM probabilities.  This is intentionally
-        cheap -- it's a *baseline*, not a serious solver.
-        """
+     
         rng = torch.Generator(device=self.device).manual_seed(0)
         for epoch in range(n_epochs):
             paths, log_probs, costs = [], [], []
