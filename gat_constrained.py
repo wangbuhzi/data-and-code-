@@ -1,23 +1,4 @@
-"""
-Constrained Graph-Attention-Network (GAT) baseline for CSPP.
-
-A small GAT encoder [Velickovic et al. 2018] + linear policy head,
-trained with REINFORCE on the same single instance.  Constraint is
-enforced at decoding time with the same feasibility mask as
-``am_constrained.py``.
-
-Architecture (cited in the revised paper):
-  - 3 GAT attention layers, 8 heads each, hidden dim 64.
-  - ReLU activations.
-  - Linear head over the concatenation of (current_node, candidate)
-    embeddings -> 1 logit per candidate.
-  - Adam, lr=5e-4, batch=8, REINFORCE for 30 epochs.
-
-Output schema matches ``solve_cspp_cplex``.
-"""
-
 from typing import Dict, List, Optional, Tuple
-
 import networkx as nx
 import torch
 import torch.nn as nn
@@ -35,8 +16,7 @@ LR = 5e-4
 
 
 class _GATLayer(nn.Module):
-    """Single GAT layer: a linear + multi-head attention, then mean-pool."""
-
+ 
     def __init__(self, d_in: int, d_out: int, n_heads: int):
         super().__init__()
         assert d_out % n_heads == 0
@@ -71,7 +51,7 @@ class _GATLayer(nn.Module):
 
 
 class _GATPolicy(nn.Module):
-    """3 GAT layers + linear policy head."""
+ 
 
     def __init__(self, n_nodes: int, d_in: int = 2, d_hid: int = D_HID,
                  n_heads: int = N_HEADS, n_layers: int = N_LAYERS):
@@ -92,7 +72,7 @@ class _GATPolicy(nn.Module):
 
     def forward(self, h: torch.Tensor, cur: int,
                 candidates: List[int], mask: torch.Tensor) -> torch.Tensor:
-        """Returns logits over `candidates` (1-D tensor, length |candidates|)."""
+ 
         cand_idx = torch.tensor(candidates, device=h.device)
         feats = torch.cat([
             h[cur].unsqueeze(0).expand(len(candidates), -1),
