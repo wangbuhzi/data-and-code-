@@ -1,10 +1,3 @@
-"""
-Agent for E2E-GERL.
-
-Implements the ε-greedy policy and path construction logic
-as described in Sections 3.6 and 4.3 of the paper.
-"""
-
 import torch
 import torch.nn as nn
 import numpy as np
@@ -25,15 +18,6 @@ class ActionSelectionResult:
 
 
 class E2EGERLAgent:
-    """
-    End-to-End Graph Embedding Reinforcement Learning Agent.
-    
-    Implements:
-    - Structure2Vec-based graph embedding
-    - Q-value computation for candidate actions
-    - ε-greedy action selection
-    - Path construction with feasibility masking
-    """
     
     def __init__(
         self,
@@ -43,14 +27,6 @@ class E2EGERLAgent:
         num_propagations: int = 3,
         device: str = 'cpu'
     ):
-        """
-        Args:
-            env: The CSP environment
-            embedding_dim: Dimension of node embeddings
-            hidden_dims: Hidden layer dimensions for Q-network
-            num_propagations: Number of Structure2Vec propagation iterations
-            device: Device for computation ('cpu' or 'cuda')
-        """
         self.env = env
         self.device = torch.device(device)
         
@@ -93,45 +69,7 @@ class E2EGERLAgent:
         self.cached_avg_time: Optional[float] = None
     
     def _get_or_compute_embeddings(self, state: State) -> Tuple[torch.Tensor, Dict]:
-        """
-        Get cached node embeddings or compute them if state changed.
-
-        --------------------------------------------------------------------------
-        Eq. 15-16: when does Structure2Vec actually re-run?
-
-        Two scenarios trigger a full re-computation:
-
-          1. The graph instance has changed (new node count, new edge
-             structure, new avg_edge_cost / time).  In that case the
-             edge index AND the cached edge feature dictionary are
-             invalidated and rebuilt -- this is what ``ensure_path``
-             does when a new instance is loaded.
-
-          2. The cumulative cost / time / visited set has changed.
-             Then the node features x_v^(t) (Eq. 13) change for every
-             node, so the W_x · x_v^(t) projection and the K
-             Structure2Vec propagation steps (Eq. 15) MUST re-run.
-             This is what the inner ``self.structure2vec(...)`` call
-             does at every decision step.
-
-        Crucially, the *edge* part of the update (W_e · Σ φ_e(e_vu))
-        is shared across the whole episode: edge features do not
-        depend on cumulative cost / time, so we re-use the cached
-        ``edge_feat_dict`` and ``edge_index``.  The cost is therefore
-
-            O(K · |E| · d)  per decision step,
-
-        not O(K · |V|² · d) as a naïve GAT-style implementation would
-        pay.  See ``profile_embedding_cost.py`` for the empirical
-        numbers.
-        --------------------------------------------------------------------------
-
-        Args:
-            state: Current state
-
-        Returns:
-            Tuple of (node_embeddings, edge_features_dict)
-        """
+    
         G = state.graph
         
         if (self.cached_edge_index is None or
@@ -185,18 +123,7 @@ class E2EGERLAgent:
         embeddings: torch.Tensor,
         edge_features: Dict
     ) -> torch.Tensor:
-        """
-        Build state-action representation h_Θ(s_t, u) from Eq. (17).
         
-        Args:
-            state: Current state
-            candidate: Candidate action node
-            embeddings: Node embeddings from Structure2Vec
-            edge_features: Edge feature dictionary
-        
-        Returns:
-            State-action representation tensor
-        """
         G = state.graph
         
         mu_vt = embeddings[state.current_node]
@@ -239,16 +166,7 @@ class E2EGERLAgent:
         state: State,
         candidates: List[int]
     ) -> Tuple[List[float], List[torch.Tensor]]:
-        """
-        Compute Q-values for all candidate actions.
-        
-        Args:
-            state: Current state
-            candidates: List of candidate nodes
-        
-        Returns:
-            Tuple of (q_values_list, state_action_reprs)
-        """
+    
         if not candidates:
             return [], []
         
@@ -274,18 +192,7 @@ class E2EGERLAgent:
         state: State,
         candidates: List[int]
     ) -> Tuple[List[float], List[torch.Tensor]]:
-        """
-        Compute Q-values using the target network.
-        
-        Used for bootstrapping in Q-learning targets.
-        
-        Args:
-            state: Current state
-            candidates: List of candidate nodes
-        
-        Returns:
-            Tuple of (q_values_list, state_action_reprs)
-        """
+      
         if not candidates:
             return [], []
         
@@ -313,17 +220,7 @@ class E2EGERLAgent:
         candidates: List[int],
         action_idx: int
     ) -> torch.Tensor:
-        """
-        Compute Q-value for a specific action during training (with gradients).
-        
-        Args:
-            state: Current state
-            candidates: List of candidate nodes
-            action_idx: Index of the action to compute Q-value for
-        
-        Returns:
-            Q-value scalar tensor (with gradients)
-        """
+       
         if not candidates:
             return torch.zeros(1, device=self.device, requires_grad=True)
         
@@ -344,17 +241,7 @@ class E2EGERLAgent:
         epsilon: float = 0.0,
         candidates: Optional[List[int]] = None
     ) -> ActionSelectionResult:
-        """
-        Select action using ε-greedy policy from Eq. (29).
-        
-        Args:
-            state: Current state
-            epsilon: Exploration probability
-            candidates: List of valid candidates (computed if None)
-        
-        Returns:
-            ActionSelectionResult with chosen action and metadata
-        """
+     
         if candidates is None:
             candidates = state.get_available_actions()
         
@@ -384,15 +271,7 @@ class E2EGERLAgent:
         )
     
     def get_best_action(self, state: State) -> int:
-        """
-        Get the best action according to current Q-values (greedy).
         
-        Args:
-            state: Current state
-        
-        Returns:
-            Best action (no exploration)
-        """
         candidates = state.get_available_actions()
         return self.select_action(state, epsilon=0.0, candidates=candidates).action
     
@@ -401,16 +280,7 @@ class E2EGERLAgent:
         state: State,
         max_steps: int = 100
     ) -> Tuple[List[int], float, float, bool]:
-        """
-        Construct a path from current state to destination.
-        
-        Args:
-            state: Starting state
-            max_steps: Maximum number of steps
-        
-        Returns:
-            Tuple of (path, total_cost, total_time, success)
-        """
+    
         path = [state.current_node]
         current_state = state
         steps = 0
@@ -436,14 +306,7 @@ class E2EGERLAgent:
         return path, current_state.cumulative_cost, current_state.cumulative_time, success
     
     def update_target_network(self, tau: float = 0.005):
-        """
-        Soft update of target network from Eq. (28).
-        
-        Ψ̄ ← τΨ + (1 - τ)Ψ̄
-        
-        Args:
-            tau: Soft update coefficient
-        """
+    
         for target_param, param in zip(
             self.target_q_network.parameters(),
             self.q_network.parameters()
@@ -451,25 +314,25 @@ class E2EGERLAgent:
             target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
     
     def hard_update_target_network(self):
-        """Hard update: copy Q-network to target network."""
+        
         self.target_q_network.load_state_dict(self.q_network.state_dict())
     
     def get_parameters(self) -> Dict[str, torch.Tensor]:
-        """Get all trainable parameters."""
+      
         return {
             'structure2vec': self.structure2vec.state_dict(),
             'q_network': self.q_network.state_dict()
         }
     
     def set_parameters(self, params: Dict[str, Dict]):
-        """Set parameters from a dictionary."""
+     
         if 'structure2vec' in params:
             self.structure2vec.load_state_dict(params['structure2vec'])
         if 'q_network' in params:
             self.q_network.load_state_dict(params['q_network'])
     
     def save(self, filepath: str):
-        """Save model parameters."""
+   
         torch.save({
             'structure2vec': self.structure2vec.state_dict(),
             'q_network': self.q_network.state_dict(),
@@ -477,7 +340,7 @@ class E2EGERLAgent:
         }, filepath)
     
     def load(self, filepath: str):
-        """Load model parameters."""
+    
         checkpoint = torch.load(filepath, map_location=self.device)
         self.structure2vec.load_state_dict(checkpoint['structure2vec'])
         self.q_network.load_state_dict(checkpoint['q_network'])
@@ -490,20 +353,6 @@ def update_lambda(
     T_max: float,
     eta_lambda: float = 0.1
 ) -> float:
-    """
-    Update λ using projected subgradient rule from Eq. (6).
-    
-    λ^{(l+1)} = [λ^{(l)} + η_λ(T(P^{(l)}) - T_max)]_+
-    
-    Args:
-        lambda_current: Current λ value
-        T_P: Path time
-        T_max: Maximum allowed time
-        eta_lambda: Step size η_λ
-    
-    Returns:
-        Updated λ value
-    """
     violation = T_P - T_max
     new_lambda = lambda_current + eta_lambda * violation
     return max(0.0, new_lambda)
