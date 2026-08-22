@@ -1,10 +1,3 @@
-"""
-Training module for E2E-GERL.
-
-Implements the training procedure described in Algorithm 1 and Section 4
-of the paper, including n-step Q-Learning and experience replay.
-"""
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -21,7 +14,6 @@ from graph_utils import GraphInstance, create_instance
 
 @dataclass
 class TrainingStats:
-    """Statistics collected during training."""
     episode: int
     episode_reward: float
     path_cost: float
@@ -34,25 +26,14 @@ class TrainingStats:
 
 
 class NStepReturnBuffer:
-    """
-    Buffer for computing n-step returns during training.
-
-    Implements the n-step return computation from Eq. (25):
-    R_t^(n) = Σ_{k=0}^{n-1} γ^k r_{t+k}
-    """
+   
 
     def __init__(self, n_step: int = 5, gamma: float = 1.0):
-        """
-        Args:
-            n_step: Number of steps for n-step return
-            gamma: Discount factor
-        """
         self.n_step = n_step
         self.gamma = gamma
         self.buffer: deque = deque(maxlen=n_step)
 
     def add(self, state: State, action: int, reward: float, done: bool):
-        """Add a transition to the buffer."""
         self.buffer.append({
             'state': state,
             'action': action,
@@ -65,19 +46,6 @@ class NStepReturnBuffer:
         bootstrap_state: Optional[State] = None,
         bootstrap_done: bool = False
     ) -> Tuple[Optional[State], Optional[int], Optional[float], Optional[State], bool]:
-        """
-        Compute n-step return if buffer has n entries or episode ended.
-
-        Implements Eq. (25):
-        R_t^(n) = Σ_{k=0}^{n-1} γ^k r_{t+k}
-
-        Args:
-            bootstrap_state: State to bootstrap from if not enough steps
-            bootstrap_done: Whether bootstrap state is terminal
-
-        Returns:
-            Tuple of (state_t, action_t, n_step_return, state_{t+n}, done)
-        """
         if not self.buffer:
             return None, None, None, None, False
 
@@ -97,7 +65,6 @@ class NStepReturnBuffer:
         )
 
     def clear(self):
-        """Clear the buffer."""
         self.buffer.clear()
 
     def __len__(self) -> int:
@@ -105,16 +72,6 @@ class NStepReturnBuffer:
 
 
 class E2EGERLTrainer:
-    """
-    Trainer for E2E-GERL with n-step Q-Learning.
-
-    Implements the training procedure from Algorithm 1:
-    - Epsilon-greedy exploration
-    - N-step return computation
-    - Experience replay
-    - Target network updates
-    - Dynamic λ update for constraint satisfaction
-    """
 
     def __init__(
         self,
@@ -122,38 +79,18 @@ class E2EGERLTrainer:
         env: CSPEnvironment,
         learning_rate: float = 1e-4,
         gamma: float = 1.0,
-        n_step: int = 5,
-        batch_size: int = 32,
+        n_step: int = 2,
+        batch_size: int = 64,
         replay_capacity: int = 10000,
         epsilon_start: float = 1.0,
-        epsilon_min: float = 0.05,
+        epsilon_min: float = 0.1,
         epsilon_decay: float = 0.995,
         target_update_freq: int = 10,
         tau: float = 0.005,
-        lambda_init: float = 10.0,
-        eta_lambda: float = 0.1,
-        max_steps_per_episode: int = 100,
-        device: str = 'cpu'
+        max_steps_per_episode: int = 1000,
+        device: str = 'gpu'
     ):
-        """
-        Args:
-            agent: The E2E-GERL agent
-            env: The CSP environment
-            learning_rate: Learning rate for optimizer
-            gamma: Discount factor (1.0 for finite horizon)
-            n_step: Number of steps for n-step return
-            batch_size: Mini-batch size for training
-            replay_capacity: Capacity of replay memory
-            epsilon_start: Initial exploration rate
-            epsilon_min: Minimum exploration rate
-            epsilon_decay: Epsilon decay factor per episode
-            target_update_freq: Frequency of target network hard updates
-            tau: Soft update coefficient
-            lambda_init: Initial value of λ penalty coefficient
-            eta_lambda: Step size for λ update
-            max_steps_per_episode: Maximum steps per episode
-            device: Device for computation
-        """
+      
         self.agent = agent
         self.env = env
 
@@ -186,33 +123,22 @@ class E2EGERLTrainer:
         self.episode_count = 0
 
     def set_lambda(self, value: float):
-        """Forcefully reset the Lagrangian coefficient.
-
-        Used by the fixed-lambda ablation: every training/eval episode
-        re-seats both ``self.lambda_penalty`` and ``self.env.lambda_penalty``
-        to the same constant, so the projected-subgradient update (which
-        only runs when ``update_lambda_flag=True``) is the only way lambda
-        can change.
-        """
+      
         self.lambda_penalty = float(value)
         self.env.lambda_penalty = float(value)
 
     def _compute_epsilon(self, episode: int) -> float:
-        """
-        Compute epsilon for episode using decay schedule.
-
-        ε_l = max(ε_min, ε_0 · α_ε^l)
-        """
+       
         return max(self.epsilon_min, self._epsilon_start * (self.epsilon_decay ** episode))
 
     def _store_transition(self, transition: Transition):
-        """Store transition in replay memory."""
+       
         if len(self.replay_memory) >= self.replay_capacity:
             self.replay_memory.pop(0)
         self.replay_memory.append(transition)
 
     def _sample_batch(self) -> List[Transition]:
-        """Sample a random mini-batch from replay memory."""
+      
         if len(self.replay_memory) < self.batch_size:
             return self.replay_memory.copy()
         return list(np.random.choice(self.replay_memory, self.batch_size, replace=False))
@@ -221,18 +147,6 @@ class E2EGERLTrainer:
         self,
         transitions: List[Transition]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Compute targets for Q-learning update.
-
-        Implements Eq. (26) and Eq. (27):
-        - If episode terminates within n steps: y = R_t^(n)
-        - Otherwise: y = R_t^(n) + γ^n · max Q̄(s_{t+n}, u)
-
-        Loss: J(Ψ) = (1/|B|) Σ (Q_Ψ(s_t, a_t) - y_t)^2
-
-        Note: Since γ=1 in Eq.(27) cumulative-return formulation with γ=1,
-        the bootstrap term uses γ^n.
-        """
         current_q_values = []
         target_values = []
 
@@ -280,12 +194,7 @@ class E2EGERLTrainer:
         return current_q_tensor, target_tensor
 
     def train_step(self) -> Optional[float]:
-        """
-        Perform one training step.
-
-        Returns:
-            Loss value if training was performed, None otherwise
-        """
+      
         if len(self.replay_memory) < self.batch_size:
             return None
 
@@ -314,31 +223,7 @@ class E2EGERLTrainer:
         training: bool = True,
         update_lambda_flag: bool = True
     ) -> TrainingStats:
-        """
-        Run one training episode.
-
-        --------------------------------------------------------------------------
-        Algorithm 1: E2E-GERL decision loop (response to Reviewer #X).
-
-        Per-step cost breakdown (line numbers refer to this method):
-
-          * select_action (line ~345)
-              -> _get_or_compute_embeddings  (Eq. 15-16)
-                 ^  hits the cache if graph is unchanged; otherwise
-                    runs K Structure2Vec propagation steps.
-              -> compute_q_values            (Eq. 17, batched)
-          * env.step (line ~348)
-              -> O(|A|) lookup, no embedding re-computation.
-        --------------------------------------------------------------------------
-
-        Args:
-            instance: Graph instance to solve
-            training: Whether to perform training updates
-            update_lambda_flag: Whether to apply the projected-subgradient
-                update to lambda after the episode terminates. Set to False
-                when running a fixed-lambda ablation; the lambda value
-                stays at its initial value throughout training/eval.
-        """
+       
         self.env.set_instance(instance)
         state = self.env.reset()
 
@@ -418,11 +303,6 @@ class E2EGERLTrainer:
                 self.epsilon * self.epsilon_decay
             )
 
-        # Projected-subgradient update on lambda (Eq. 6 of the paper).
-        # Only applied when (a) we are in training mode, (b) the caller
-        # requested adaptive lambda (the fixed-lambda ablation passes False),
-        # and (c) the episode actually terminated at the destination so we
-        # have a real T(P) to plug into the violation.
         if (training
                 and update_lambda_flag
                 and reached_destination
@@ -463,20 +343,7 @@ class E2EGERLTrainer:
         val_freq: int = 100,
         verbose: bool = True
     ) -> List[TrainingStats]:
-        """
-        Train the agent for multiple episodes.
-
-        Args:
-            num_episodes: Number of training episodes
-            instances: Pre-generated training instances
-            instance_generator: Function to generate new instances
-            val_instances: Validation instances for evaluation
-            val_freq: Frequency of validation
-            verbose: Whether to print progress
-
-        Returns:
-            List of training statistics
-        """
+     
         best_val_cost = float('inf')
 
         for episode in range(num_episodes):
@@ -509,15 +376,7 @@ class E2EGERLTrainer:
         return self.training_stats
 
     def validate(self, instances: List[GraphInstance]) -> Dict[str, float]:
-        """
-        Validate the agent on a set of instances.
-
-        Args:
-            instances: List of validation instances
-
-        Returns:
-            Dictionary with validation metrics
-        """
+       
         costs = []
         times = []
         feasible_count = 0
@@ -548,18 +407,7 @@ def generate_training_instances(
     edge_prob_range: Tuple[float, float] = (0.2, 0.4),
     seed: int = 42
 ) -> List[GraphInstance]:
-    """
-    Generate a set of training instances.
-
-    Args:
-        num_instances: Number of instances to generate
-        num_nodes_range: Range of number of nodes
-        edge_prob_range: Range of edge probability
-        seed: Random seed
-
-    Returns:
-        List of GraphInstance objects
-    """
+  
     np.random.seed(seed)
 
     instances = []
